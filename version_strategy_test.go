@@ -54,7 +54,7 @@ func Test_DefaultVersionStrategy_AllGolangDistributions(t *testing.T) {
 		"windows/arm":     {"windows", "arm"},
 	}
 
-	defaultConfig := DefaultConfig()
+	defaultConfig := Config()
 
 	for dist, expected := range allGolangDistributions {
 		dist := dist
@@ -81,7 +81,7 @@ func Test_DefaultVersionStrategy_AllGolangDistributions(t *testing.T) {
 
 func Test_DefaultVersionStrategy_Linux_ARM32V6(t *testing.T) {
 	operatingSystem, architecture, postgresVersion := defaultVersionStrategy(
-		DefaultConfig(),
+		Config(),
 		"linux",
 		"arm",
 		func() string {
@@ -97,7 +97,7 @@ func Test_DefaultVersionStrategy_Linux_ARM32V6(t *testing.T) {
 
 func Test_DefaultVersionStrategy_Linux_ARM32V7(t *testing.T) {
 	operatingSystem, architecture, postgresVersion := defaultVersionStrategy(
-		DefaultConfig(),
+		Config(),
 		"linux",
 		"arm",
 		func() string {
@@ -113,7 +113,7 @@ func Test_DefaultVersionStrategy_Linux_ARM32V7(t *testing.T) {
 
 func Test_DefaultVersionStrategy_Linux_Alpine(t *testing.T) {
 	operatingSystem, architecture, postgresVersion := defaultVersionStrategy(
-		DefaultConfig(),
+		Config(),
 		"linux",
 		"amd64",
 		func() string {

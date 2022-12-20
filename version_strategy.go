@@ -10,7 +10,7 @@ import (
 // the operating system, architecture and desired Postgres version.
 type VersionStrategy func() (operatingSystem string, architecture string, postgresVersion PostgresVersion)
 
-func defaultVersionStrategy(config Config, goos, arch string, linuxMachineName func() string, shouldUseAlpineLinuxBuild func() bool) VersionStrategy {
+func defaultVersionStrategy(config *config, goos, arch string, linuxMachineName func() string, shouldUseAlpineLinuxBuild func() bool) VersionStrategy {
 	return func() (string, string, PostgresVersion) {
 		goos := goos
 		arch := arch

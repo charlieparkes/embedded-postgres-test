@@ -4,10 +4,11 @@ import (
 	"io"
 	"os"
 	"time"
+
+	"go.uber.org/zap/zapcore"
 )
 
-// Config maintains the runtime configuration for the Postgres process to be created.
-type Config struct {
+type config struct {
 	version             PostgresVersion
 	port                uint32
 	database            string
@@ -15,113 +16,111 @@ type Config struct {
 	password            string
 	runtimePath         string
 	dataPath            string
-	binariesPath        string
 	locale              string
 	binaryRepositoryURL string
 	startTimeout        time.Duration
-	logger              io.Writer
+	logLevel            zapcore.Level
+	pgLogger            io.Writer
+	pgConf              map[string]string
 }
 
-// DefaultConfig provides a default set of configuration to be used "as is" or modified using the provided builders.
-// The following can be assumed as defaults:
-// Version:      14
-// Port:         5432
-// Database:     postgres
-// Username:     postgres
-// Password:     postgres
-// StartTimeout: 15 Seconds
-func DefaultConfig() Config {
-	return Config{
+func Config(opts ...opt) *config {
+	c := &config{
 		version:             V14,
-		port:                5432,
 		database:            "postgres",
 		username:            "postgres",
 		password:            "postgres",
 		startTimeout:        15 * time.Second,
-		logger:              os.Stdout,
+		logLevel:            zapcore.DebugLevel,
+		pgLogger:            os.Stdout,
 		binaryRepositoryURL: "https://repo1.maven.org/maven2",
+		pgConf: map[string]string{
+			"fsync":                   "off",
+			"synchronous_commit":      "off",
+			"full_page_writes":        "off",
+			"random_page_cost":        "1.1",
+			"shared_buffers":          "12MB",
+			"work_mem":                "12MB",
+			"log_min_messages":        "PANIC",
+			"log_min_error_statement": "PANIC",
+			"log_statement":           "none",
+			"client_min_messages":     "ERROR",
+			"commit_delay":            "100000",
+			"wal_level":               "minimal",
+			"archive_mode":            "off",
+			"max_wal_senders":         "0",
+		},
+	}
+	for _, opt := range opts {
+		opt(c)
+	}
+	return c
+}
+
+type opt func(*config)
+
+// WithVersion will set the Postgres binary version
+func WithVersion(version PostgresVersion) opt {
+	return func(c *config) {
+		c.version = version
 	}
 }
 
-// Version will set the Postgres binary version.
-func (c Config) Version(version PostgresVersion) Config {
-	c.version = version
-	return c
+// WithLocale sets the default locale for initdb
+func WithLocale(locale string) opt {
+	return func(c *config) {
+		c.locale = locale
+	}
 }
 
-// Port sets the runtime port that Postgres can be accessed on.
-func (c Config) Port(port uint32) Config {
-	c.port = port
-	return c
+// WithLogger sets the logger for postgres output
+func WithPGLogger(logger io.Writer) opt {
+	return func(c *config) {
+		c.pgLogger = logger
+	}
 }
 
-// Database sets the database name that will be created.
-func (c Config) Database(database string) Config {
-	c.database = database
-	return c
+// WithRepository sets BinaryRepositoryURL to fetch PG Binary in case of Maven proxy
+func WithRepository(url string) opt {
+	return func(c *config) {
+		c.binaryRepositoryURL = url
+	}
 }
 
-// Username sets the username that will be used to connect.
-func (c Config) Username(username string) Config {
-	c.username = username
-	return c
+func WithStartTimeout(d time.Duration) opt {
+	return func(c *config) {
+		c.startTimeout = d
+	}
 }
 
-// Password sets the password that will be used to connect.
-func (c Config) Password(password string) Config {
-	c.password = password
-	return c
+func WithDatabase(database string) opt {
+	return func(c *config) {
+		c.database = database
+	}
 }
 
-// RuntimePath sets the path that will be used for the extracted Postgres runtime directory.
-// If Postgres data directory is not set with DataPath(), this directory is also used as data directory.
-func (c Config) RuntimePath(path string) Config {
-	c.runtimePath = path
-	return c
+func WithPort(port uint32) opt {
+	return func(c *config) {
+		c.port = port
+	}
 }
 
-// DataPath sets the path that will be used for the Postgres data directory.
-// If this option is set, a previously initialized data directory will be reused if possible.
-func (c Config) DataPath(path string) Config {
-	c.dataPath = path
-	return c
+func WithRuntimePath(path string) opt {
+	return func(c *config) {
+		c.runtimePath = path
+	}
 }
 
-// BinariesPath sets the path of the pre-downloaded postgres binaries.
-// If this option is left unset, the binaries will be downloaded.
-func (c Config) BinariesPath(path string) Config {
-	c.binariesPath = path
-	return c
+func WithLogLevel(ll zapcore.Level) opt {
+	return func(c *config) {
+		c.logLevel = ll
+	}
 }
 
-// Locale sets the default locale for initdb
-func (c Config) Locale(locale string) Config {
-	c.locale = locale
-	return c
-}
-
-// StartTimeout sets the max timeout that will be used when starting the Postgres process and creating the initial database.
-func (c Config) StartTimeout(timeout time.Duration) Config {
-	c.startTimeout = timeout
-	return c
-}
-
-// Logger sets the logger for postgres output
-func (c Config) Logger(logger io.Writer) Config {
-	c.logger = logger
-	return c
-}
-
-// BinaryRepositoryURL set BinaryRepositoryURL to fetch PG Binary in case of Maven proxy
-func (c Config) BinaryRepositoryURL(binaryRepositoryURL string) Config {
-	c.binaryRepositoryURL = binaryRepositoryURL
-	return c
-}
-
-// PostgresVersion represents the semantic version used to fetch and run the Postgres process.
+// PostgresVersion represents the semantic version used to fetch and run the Postgres process
 type PostgresVersion string
 
-// Predefined supported Postgres versions.
+// Predefined supported Postgres versions
 const (
 	V14 = PostgresVersion("14.5.0")
 	V13 = PostgresVersion("13.8.0")

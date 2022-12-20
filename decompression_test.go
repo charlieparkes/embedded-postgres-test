@@ -14,15 +14,13 @@ import (
 )
 
 func Test_decompressTarXz(t *testing.T) {
-	tempDir, err := ioutil.TempDir("", "temp_tar_test")
-	if err != nil {
-		panic(err)
-	}
+	tempDir, cleanupTempDir := makeTempDir("temp_tar_test")
+	defer cleanupTempDir()
 
 	archive, cleanUp := createTempXzArchive()
 	defer cleanUp()
 
-	err = decompressTarXz(defaultTarReader, archive, tempDir)
+	err := decompressTarXz(defaultTarReader, archive, tempDir)
 
 	assert.NoError(t, err)
 
@@ -42,15 +40,13 @@ func Test_decompressTarXz_ErrorWhenFileNotExists(t *testing.T) {
 }
 
 func Test_decompressTarXz_ErrorWhenErrorDuringRead(t *testing.T) {
-	tempDir, err := ioutil.TempDir("", "temp_tar_test")
-	if err != nil {
-		panic(err)
-	}
+	tempDir, cleanupTempDir := makeTempDir("temp_tar_test")
+	defer cleanupTempDir()
 
 	archive, cleanUp := createTempXzArchive()
 	defer cleanUp()
 
-	err = decompressTarXz(func(reader *xz.Reader) (func() (*tar.Header, error), func() io.Reader) {
+	err := decompressTarXz(func(reader *xz.Reader) (func() (*tar.Header, error), func() io.Reader) {
 		return func() (*tar.Header, error) {
 			return nil, errors.New("oh noes")
 		}, nil
@@ -60,17 +56,15 @@ func Test_decompressTarXz_ErrorWhenErrorDuringRead(t *testing.T) {
 }
 
 func Test_decompressTarXz_ErrorWhenFailedToReadFileToCopy(t *testing.T) {
-	tempDir, err := ioutil.TempDir("", "temp_tar_test")
-	if err != nil {
-		panic(err)
-	}
+	tempDir, cleanupTempDir := makeTempDir("temp_tar_test")
+	defer cleanupTempDir()
 
 	archive, cleanUp := createTempXzArchive()
 	defer cleanUp()
 
 	blockingFile := filepath.Join(tempDir, "blocking")
 
-	if err = ioutil.WriteFile(blockingFile, []byte("wazz"), 0000); err != nil {
+	if err := ioutil.WriteFile(blockingFile, []byte("wazz"), 0000); err != nil {
 		panic(err)
 	}
 
@@ -94,16 +88,14 @@ func Test_decompressTarXz_ErrorWhenFailedToReadFileToCopy(t *testing.T) {
 			}
 	}
 
-	err = decompressTarXz(fileBlockingExtractTarReader, archive, tempDir)
+	err := decompressTarXz(fileBlockingExtractTarReader, archive, tempDir)
 
 	assert.Regexp(t, "^unable to extract postgres archive:.+$", err)
 }
 
 func Test_decompressTarXz_ErrorWhenFileToCopyToNotExists(t *testing.T) {
-	tempDir, err := ioutil.TempDir("", "temp_tar_test")
-	if err != nil {
-		panic(err)
-	}
+	tempDir, cleanupTempDir := makeTempDir("temp_tar_test")
+	defer cleanupTempDir()
 
 	archive, cleanUp := createTempXzArchive()
 	defer cleanUp()
@@ -128,16 +120,14 @@ func Test_decompressTarXz_ErrorWhenFileToCopyToNotExists(t *testing.T) {
 			}
 	}
 
-	err = decompressTarXz(fileBlockingExtractTarReader, archive, tempDir)
+	err := decompressTarXz(fileBlockingExtractTarReader, archive, tempDir)
 
 	assert.Regexp(t, "^unable to extract postgres archive:.+$", err)
 }
 
 func Test_decompressTarXz_ErrorWhenArchiveCorrupted(t *testing.T) {
-	tempDir, err := ioutil.TempDir("", "temp_tar_test")
-	if err != nil {
-		panic(err)
-	}
+	tempDir, cleanupTempDir := makeTempDir("temp_tar_test")
+	defer cleanupTempDir()
 
 	archive, cleanup := createTempXzArchive()
 

@@ -1,224 +1,105 @@
 package embeddedpostgres
 
 import (
-	"errors"
+	"context"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/jackc/pgerrcode"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func Test_defaultInitDatabase_ErrorWhenCannotCreatePasswordFile(t *testing.T) {
 	err := defaultInitDatabase("path_not_exists", "path_not_exists", "path_not_exists", "Tom", "Beer", "", os.Stderr)
 
-	assert.EqualError(t, err, "unable to write password file to path_not_exists/pwfile")
+	assert.Contains(t, err.Error(), "unable to write password file to path_not_exists/pwfile")
 }
 
 func Test_defaultInitDatabase_ErrorWhenCannotStartInitDBProcess(t *testing.T) {
-	binTempDir, err := ioutil.TempDir("", "prepare_database_test_bin")
-	if err != nil {
-		panic(err)
-	}
+	binTempDir, cleanupBinTempDir := makeTempDir("prepare_database_test_bin")
+	defer cleanupBinTempDir()
 
-	runtimeTempDir, err := ioutil.TempDir("", "prepare_database_test_runtime")
-	if err != nil {
-		panic(err)
-	}
+	runtimeTempDir, cleanupRuntimeTempDir := makeTempDir("prepare_database_test_runtime")
+	defer cleanupRuntimeTempDir()
 
-	defer func() {
-		if err := os.RemoveAll(binTempDir); err != nil {
-			panic(err)
-		}
-
-		if err := os.RemoveAll(runtimeTempDir); err != nil {
-			panic(err)
-		}
-	}()
-
-	err = defaultInitDatabase(binTempDir, runtimeTempDir, filepath.Join(runtimeTempDir, "data"), "Tom", "Beer", "", os.Stderr)
+	err := defaultInitDatabase(binTempDir, runtimeTempDir, filepath.Join(runtimeTempDir, "data"), "Tom", "Beer", "", os.Stderr)
 
 	assert.NotNil(t, err)
-	assert.Contains(t, err.Error(), fmt.Sprintf("unable to init database using '%s/bin/initdb -A password -U Tom -D %s/data --pwfile=%s/pwfile'",
+	assert.Contains(t, err.Error(), fmt.Sprintf("unable to init database using '%s/bin/initdb -A password -U Tom -D %s/data --pwfile=%s",
 		binTempDir,
 		runtimeTempDir,
 		runtimeTempDir))
-	assert.FileExists(t, filepath.Join(runtimeTempDir, "pwfile"))
+	// assert.FileExists(t, filepath.Join(runtimeTempDir, "pwfile"))
 }
 
 func Test_defaultInitDatabase_ErrorInvalidLocaleSetting(t *testing.T) {
-	tempDir, err := ioutil.TempDir("", "prepare_database_test")
-	if err != nil {
-		panic(err)
-	}
+	tempDir, cleanupTempDir := makeTempDir("prepare_database_test")
+	defer cleanupTempDir()
 
-	defer func() {
-		if err := os.RemoveAll(tempDir); err != nil {
-			panic(err)
-		}
-	}()
-
-	err = defaultInitDatabase(tempDir, tempDir, filepath.Join(tempDir, "data"), "postgres", "postgres", "en_XY", os.Stderr)
+	err := defaultInitDatabase(tempDir, tempDir, filepath.Join(tempDir, "data"), "postgres", "postgres", "en_XY", os.Stderr)
 
 	assert.NotNil(t, err)
-	assert.Contains(t, err.Error(), fmt.Sprintf("unable to init database using '%s/bin/initdb -A password -U postgres -D %s/data --pwfile=%s/pwfile --locale=en_XY'",
+	assert.Contains(t, err.Error(), fmt.Sprintf("unable to init database using '%s/bin/initdb -A password -U postgres -D %s/data --pwfile=%s",
 		tempDir,
 		tempDir,
 		tempDir))
+	assert.Contains(t, err.Error(), "--locale=en_XY")
 }
 
 func Test_defaultInitDatabase_PwFileRemoved(t *testing.T) {
-	tempDir, err := ioutil.TempDir("", "prepare_database_test")
-	if err != nil {
-		panic(err)
-	}
+	tempDir, cleanupTempDir := makeTempDir("prepare_database_test")
+	defer cleanupTempDir()
 
-	defer func() {
-		if err := os.RemoveAll(tempDir); err != nil {
-			panic(err)
-		}
-	}()
-
-	database := NewDatabase(DefaultConfig().RuntimePath(tempDir))
-	if err := database.Start(); err != nil {
+	database := NewDatabase(Config(WithRuntimePath(tempDir)))
+	if err := database.Start(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 
 	defer func() {
-		if err := database.Stop(); err != nil {
+		if err := database.Stop(context.Background()); err != nil {
 			t.Fatal(err)
 		}
 	}()
 
 	pwFile := filepath.Join(tempDir, "pwfile")
-	_, err = os.Stat(pwFile)
+	_, err := os.Stat(pwFile)
 
 	assert.True(t, os.IsNotExist(err), "pwfile (%v) still exists after starting the db", pwFile)
 }
 
 func Test_defaultCreateDatabase_ErrorWhenSQLOpenError(t *testing.T) {
-	err := defaultCreateDatabase(1234, "user client_encoding=lol", "password", "database")
-
-	assert.EqualError(t, err, "unable to connect to create database with custom name database with the following error: client_encoding must be absent or 'UTF8'")
+	err := defaultCreateDatabase(context.Background(), 1234, "user client_encoding=lol", "password", "database")
+	assert.Contains(t, err.Error(), "failed to connect to")
 }
 
 func Test_defaultCreateDatabase_ErrorWhenQueryError(t *testing.T) {
-	database := NewDatabase(DefaultConfig().
-		Port(9831).
-		Database("b33r"))
-	if err := database.Start(); err != nil {
+	port, err := findPort()
+	require.NoError(t, err)
+	database := NewDatabase(Config(WithPort(port), WithDatabase("b33r")))
+	if err := database.Start(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 
 	defer func() {
-		if err := database.Stop(); err != nil {
+		if err := database.Stop(context.Background()); err != nil {
 			t.Fatal(err)
 		}
 	}()
 
-	err := defaultCreateDatabase(9831, "postgres", "postgres", "b33r")
+	err = defaultCreateDatabase(context.Background(), port, "postgres", "postgres", "b33r")
 
-	assert.EqualError(t, err, `unable to connect to create database with custom name b33r with the following error: pq: database "b33r" already exists`)
+	require.NotNil(t, err)
+	pe, e := pgError(err)
+	require.NoError(t, e)
+	fmt.Printf("%+v\n", pe)
+	assert.Contains(t, err.Error(), "unable to create database 'b33r'")
+	assert.Equal(t, pgerrcode.DuplicateDatabase, pgErrorCode(err))
 }
 
 func Test_healthCheckDatabase_ErrorWhenSQLConnectingError(t *testing.T) {
-	err := healthCheckDatabase(1234, "tom client_encoding=lol", "more", "b33r")
-
-	assert.EqualError(t, err, "client_encoding must be absent or 'UTF8'")
-}
-
-type CloserWithoutErr struct{}
-
-func (c *CloserWithoutErr) Close() error {
-	return nil
-}
-
-func TestConnCloserWithoutErr(t *testing.T) {
-	originalErr := errors.New("OriginalError")
-
-	tests := []struct {
-		name           string
-		err            error
-		expectedErrTxt string
-	}{
-		{
-			"No original error, no error from closer",
-			nil,
-			"",
-		},
-		{
-			"original error, no error from closer",
-			originalErr,
-			originalErr.Error(),
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			resultErr := connectionClose(&CloserWithoutErr{}, tt.err)
-
-			if len(tt.expectedErrTxt) == 0 {
-				if resultErr != nil {
-					t.Fatalf("Expected nil error, got error: %v", resultErr)
-				}
-
-				return
-			}
-
-			if resultErr.Error() != tt.expectedErrTxt {
-				t.Fatalf("Expected error: %v, got error: %v", tt.expectedErrTxt, resultErr)
-			}
-		})
-	}
-}
-
-type CloserWithErr struct{}
-
-const testError = "TestError"
-
-func (c *CloserWithErr) Close() error {
-	return errors.New(testError)
-}
-
-func TestConnCloserWithErr(t *testing.T) {
-	originalErr := errors.New("OriginalError")
-
-	closeDBConnErr := fmt.Errorf(fmtCloseDBConn, errors.New(testError))
-
-	tests := []struct {
-		name           string
-		err            error
-		expectedErrTxt string
-	}{
-		{
-			"No original error, error from closer",
-			nil,
-			closeDBConnErr.Error(),
-		},
-		{
-			"original error, error from closer",
-			originalErr,
-			fmt.Errorf(fmtAfterError, closeDBConnErr, originalErr).Error(),
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			resultErr := connectionClose(&CloserWithErr{}, tt.err)
-
-			if len(tt.expectedErrTxt) == 0 {
-				if resultErr != nil {
-					t.Fatalf("Expected nil error, got error: %v", resultErr)
-				}
-
-				return
-			}
-
-			if resultErr.Error() != tt.expectedErrTxt {
-				t.Fatalf("Expected error: %v, got error: %v", tt.expectedErrTxt, resultErr)
-			}
-		})
-	}
+	err := healthCheck(context.Background(), 1234, "tom client_encoding=lol", "more", "b33r")
+	assert.Contains(t, err.Error(), "failed to connect")
 }

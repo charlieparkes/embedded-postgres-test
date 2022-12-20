@@ -1,9 +1,11 @@
 package embeddedpostgres
 
 import (
+	"context"
 	"encoding/base64"
 	"io/ioutil"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"go.uber.org/goleak"
@@ -17,8 +19,25 @@ func createTempZipArchive() (string, func()) {
 	return writeFileWithBase64Content("remote_fetch_test*.zip", "UEsDBBQACAAIAExBSlMAAAAAAAAAAAAAAAAaAAkAcmVtb3RlX2ZldGNoX3Rlc3Q4MDA0NjE5MDVVVAUAAfCfYmEBAAD//1BLBwgAAAAABQAAAAAAAABQSwMEFAAIAAAATEFKUwAAAAAAAAAAAAAAABUACQByZW1vdGVfZmV0Y2hfdGVzdC50eHpVVAUAAfCfYmH9N3pYWgAABObWtEYCACEBFgAAAHQv5aPgBf8Abl0AORlJ/tq+A8rMBye1kCuXLnw2aeeO0gdfXeVHCWpF8/VeZU/MTVkdLzI+XgKLEMlHJukIdxP7iSAuKts+v7aDrJu68RHNgIsXGrGouAjf780FXjTUjX4vXDh08vNY1yOBayt9z9dKHdoG9AeAIgAAAAAOKMpgA1Mm3wABigGADAAAjIVdpbHEZ/sCAAAAAARZWlBLBwhkmQgRsAAAALAAAABQSwECFAMUAAgACABMQUpTAAAAAAUAAAAAAAAAGgAJAAAAAAAAAAAAgIEAAAAAcmVtb3RlX2ZldGNoX3Rlc3Q4MDA0NjE5MDVVVAUAAfCfYmFQSwECFAMUAAgAAABMQUpTZJkIEbAAAACwAAAAFQAJAAAAAAAAAAAApIFWAAAAcmVtb3RlX2ZldGNoX3Rlc3QudHh6VVQFAAHwn2JhUEsFBgAAAAACAAIAnQAAAFIBAAAAAA==")
 }
 
+func makeTempDir(name string) (string, func()) {
+	path := filepath.Join(cacheDirectory(), "tmp")
+	if err := os.MkdirAll(path, 0700); err != nil {
+		panic(err)
+	}
+	tempDir, err := os.MkdirTemp(path, name+"*")
+	if err != nil {
+		panic(err)
+	}
+	return tempDir, func() {
+		if err := os.RemoveAll(tempDir); err != nil {
+			panic(err)
+		}
+	}
+}
+
 func writeFileWithBase64Content(filename, base64Content string) (string, func()) {
-	tempFile, err := ioutil.TempFile("", filename)
+	tempDir, dirCleanup := makeTempDir("file")
+	tempFile, err := os.CreateTemp(tempDir, filename)
 	if err != nil {
 		panic(err)
 	}
@@ -36,17 +55,18 @@ func writeFileWithBase64Content(filename, base64Content string) (string, func())
 		if err := os.RemoveAll(tempFile.Name()); err != nil {
 			panic(err)
 		}
+		dirCleanup()
 	}
 }
 
 func shutdownDBAndFail(t *testing.T, err error, db *EmbeddedPostgres) {
 	if db.started {
-		if stopErr := db.Stop(); stopErr != nil {
+		if stopErr := db.Stop(context.Background()); stopErr != nil {
 			t.Errorf("Failed to shutdown server with error %s", stopErr)
 		}
 	}
 
-	t.Errorf("Failed for version %s with error %s", db.config.version, err)
+	t.Errorf("Failed for version %s with error: %s", db.config.version, err)
 }
 
 func testVersionStrategy() VersionStrategy {

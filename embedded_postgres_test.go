@@ -16,23 +16,20 @@ func Test_DefaultConfig(t *testing.T) {
 	defer verifyLeak(t)
 
 	database := NewDatabase()
-	if err := database.Start(context.Background()); err != nil {
-		shutdownDBAndFail(t, err, database)
-	}
+	err := database.Start(context.Background())
+	assert.NoError(t, err)
+	defer database.RecoverStop(context.Background())
+	defer func() { _ = database.Stop(context.Background()) }()
 
 	db, err := database.Connect(context.Background())
-	if err != nil {
-		shutdownDBAndFail(t, err, database)
-	}
+	require.NoError(t, err)
 	defer db.Close()
 
-	if err = db.Ping(context.Background()); err != nil {
-		shutdownDBAndFail(t, err, database)
-	}
+	err = db.Ping(context.Background())
+	require.NoError(t, err)
 
-	if err := database.Stop(context.Background()); err != nil {
-		shutdownDBAndFail(t, err, database)
-	}
+	err = database.Stop(context.Background())
+	require.NoError(t, err)
 }
 
 func Test_ErrorWhenPortAlreadyTaken(t *testing.T) {

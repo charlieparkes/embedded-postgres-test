@@ -53,13 +53,9 @@ func NewDatabase(config ...*config) *EmbeddedPostgres {
 }
 
 func newDatabaseWithConfig(config *config) *EmbeddedPostgres {
-	logger, err := zap.NewDevelopment()
-	if err != nil {
-		panic(err)
-	}
 	return &EmbeddedPostgres{
 		config:         config,
-		logger:         logger,
+		logger:         config.logger,
 		initDatabase:   defaultInitDatabase,
 		createDatabase: defaultCreateDatabase,
 		started:        false,

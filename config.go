@@ -5,7 +5,7 @@ import (
 	"os"
 	"time"
 
-	"go.uber.org/zap/zapcore"
+	"go.uber.org/zap"
 )
 
 type config struct {
@@ -19,7 +19,7 @@ type config struct {
 	locale              string
 	binaryRepositoryURL string
 	startTimeout        time.Duration
-	logLevel            zapcore.Level
+	logger              *zap.Logger
 	pgLogger            io.Writer
 	pgConf              map[string]string
 }
@@ -31,7 +31,6 @@ func Config(opts ...opt) *config {
 		username:            "postgres",
 		password:            "postgres",
 		startTimeout:        15 * time.Second,
-		logLevel:            zapcore.DebugLevel,
 		pgLogger:            os.Stdout,
 		binaryRepositoryURL: "https://repo1.maven.org/maven2",
 		pgConf: map[string]string{
@@ -53,6 +52,13 @@ func Config(opts ...opt) *config {
 	}
 	for _, opt := range opts {
 		opt(c)
+	}
+	if c.logger == nil {
+		logger, err := zap.NewDevelopment()
+		if err != nil {
+			panic(err)
+		}
+		c.logger = logger
 	}
 	return c
 }
@@ -111,9 +117,15 @@ func WithRuntimePath(path string) opt {
 	}
 }
 
-func WithLogLevel(ll zapcore.Level) opt {
+func WithLogger(logger *zap.Logger) opt {
 	return func(c *config) {
-		c.logLevel = ll
+		c.logger = logger
+	}
+}
+
+func WithPGConfig(conf map[string]string) opt {
+	return func(c *config) {
+		c.pgConf = conf
 	}
 }
 
